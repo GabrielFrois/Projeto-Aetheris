@@ -7,7 +7,7 @@ A CapyDev é uma equipe de desenvolvedores criada em 2024 por um grupo de estuda
 
 <h2 align="center">📌Sobre o Projeto</h2>
 
-# 🛰️ Aetheris – Aplicação Web para a visualização e comparação de dados geo-espaciais.
+# 🛰️ Aetheris – Aplicação Web para a visualização e comparação de dados geo-espaciais. 
  
 ---
 

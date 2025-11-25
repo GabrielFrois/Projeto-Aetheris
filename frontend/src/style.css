@@ -931,4 +931,25 @@ html {
   transform: translate(0, 0);
 
   z-index: 9999;
+
+}
+.action-button-select-first-six {
+  width: center;
+  display: block;
+  padding: 10px;
+  background-color: #ffb81f;
+  color: #333;
+  margin-right: auto;
+  margin-left: auto;
+  border: none;
+}
+
+#wtss-select-first-six {
+  background-color: #ffb81f;
+  border-color: #e09f00;
+  color: #333;
+  padding: 6px 12px;
+  font-weight: 600;
+
+
 }

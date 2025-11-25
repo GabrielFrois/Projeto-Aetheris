@@ -1,4 +1,3 @@
-
 // --- WTSS: registro global para evitar duplicados (single/multi, não sensível à ordem para multi) ---
 window._wtss_chart_keys = window._wtss_chart_keys || new Set();
 // Função para criar a chave única para identificar os gráficos
@@ -383,7 +382,7 @@ function getAttributeInfo(attribute) {
 
   const key = attribute.toUpperCase();
 
-  // Tenta (NDVI, EVI, NBR...)
+  //  (NDVI, EVI, NBR...)
   if (ATTRIBUTE_INFO[key]) {
     return ATTRIBUTE_INFO[key];
   }
@@ -638,30 +637,20 @@ function createChart(lat, lng, title, timeSeriesData) {
 
 const bands = Array.isArray(timeSeriesData.attributes) ? timeSeriesData.attributes.slice() : [];
 
-// --- Prevent duplicate charts of the SAME TYPE and MODE ---
-// Modes:
-//   'single' => user requested a single attribute (e.g., NDVI)
-//   'multi'  => user requested multiple attributes (e.g., NDVI + EVI)
 const mode = Array.isArray(bands) && bands.length === 1 ? 'single' : 'multi';
 
-// Determine a chartType to scope uniqueness. Prefer an explicit source/coverage when available,
-// otherwise fall back to the title. Normalize to lowercase.
 const chartTypeRaw =
   (timeSeriesData && (timeSeriesData.coverage || timeSeriesData.source || timeSeriesData.type)) ||
   title ||
   'unknown';
 const chartType = String(chartTypeRaw).trim().toLowerCase();
 
-// Normalized attributes
 const normalizedBands = bands.map(b => String(b || '').trim()).filter(Boolean);
-// Attribute key for comparison:
-//  - single: the attribute name (lowercased)
-//  - multi : sorted, lowercased, comma-joined attribute set (order-insensitive)
+
 const attrKey = mode === 'single'
   ? (normalizedBands[0] || '').toLowerCase()
   : normalizedBands.map(s => s.toLowerCase()).sort().join(',');
 
-// Helper to compute existing canvas' key
 function canvasKeyFromElement(el) {
   const t = String(el.getAttribute('data-chart-type') || '').trim().toLowerCase();
   const m = String(el.getAttribute('data-chart-mode') || '').trim().toLowerCase();
@@ -672,17 +661,16 @@ function canvasKeyFromElement(el) {
   return { t, m, attr: attrKeyExisting };
 }
 
-// Search existing charts (canvas elements) for a match
 const existingCanvas = Array.from(document.querySelectorAll('canvas[data-chart-type]'));
 const duplicateFound = existingCanvas.some(c => {
   const k = canvasKeyFromElement(c);
-  if (k.t !== chartType) return false; // different chart type -> ok
-  if (k.m !== mode) return false;      // different mode -> ok (single vs multi are independent)
+  if (k.t !== chartType) return false; 
+  if (k.m !== mode) return false;      
   return k.attr === attrKey;
 });
 
 if (duplicateFound) {
-  // Duplicate of same chart type + mode + attribute(s) — block it
+  
   showInfoPanelSTAC(
     `<div class="satelite-popup-header text-warning"><strong>Gráfico duplicado</strong></div>
      <p>Um gráfico com o mesmo tipo ("${chartTypeRaw}") e com os mesmos atributos e modo ("${mode}") já foi plotado.</p>`
@@ -690,20 +678,15 @@ if (duplicateFound) {
   return;
 }
 
-// keep bands as-is for plotting (filter out any falsy)
 const bandsToPlot = normalizedBands.slice();
 
-// timeline and raw values matrix from the server response
 const timeline = Array.isArray(timeSeriesData.timeline) ? timeSeriesData.timeline.slice() : [];
-const valuesRecords = Array.isArray(timeSeriesData.values) ? timeSeriesData.values : [];// 1) Monta os datasets primeiro
+const valuesRecords = Array.isArray(timeSeriesData.values) ? timeSeriesData.values : [];
   const chartDatasets = bandsToPlot.map((band, index) => {
-    // For each band, extract the series of raw values from the response records
     const rawValues = valuesRecords.map((rec) => (rec ? rec[band] : null));
     const scaledData = rawValues.map((val) =>
       val !== undefined && val !== null ? applyScale(val) : null
     );
-
-    // Build data points aligned with the timeline (if timeline shorter, limit to that length)
     const points = timeline.map((date, i) => ({
       x: date,
       y: i < scaledData.length ? scaledData[i] : null,
@@ -2517,7 +2500,7 @@ function updateHistoryList() {
     return;
   }
 
-  pointHistory.forEach((p) => {
+  pointHistory.forEach((p, index) => {
     const item = document.createElement("div");
     item.classList.add("history-item");
     item.innerHTML = `
@@ -2531,8 +2514,17 @@ function updateHistoryList() {
           minute: "2-digit",
         })}
       </div>
+      <span class="history-remove" style="cursor: pointer; color: red; font-size: 18px; font-weight: bold;">&times;</span>
     `;
 
+    // Adiciona o evento de clique para o botão de remoção
+    const removeButton = item.querySelector(".history-remove");
+    removeButton.addEventListener("click", () => {
+      pointHistory.splice(index, 1); // Remove o ponto do histórico
+      updateHistoryList(); // Atualiza a lista de histórico
+    });
+
+    // Adiciona o evento de clique no item para centrar o mapa no ponto
     item.addEventListener("click", () => {
       map.setView([p.lat, p.lng], 5);
       createSelectionVisuals({ lat: p.lat, lng: p.lng });
@@ -2545,6 +2537,7 @@ function updateHistoryList() {
     container.appendChild(item);
   });
 }
+
 
 document.addEventListener("DOMContentLoaded", function () {
   const widget = document.getElementById("history-floating-widget");

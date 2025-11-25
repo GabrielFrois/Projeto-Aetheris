@@ -633,83 +633,109 @@ function createChart(lat, lng, title, timeSeriesData) {
     return;
   }
 
-  const chartId = `chart-${Date.now()}`;
+// Gera um identificador único para o gráfico com base na data atual
+const chartId = `chart-${Date.now()}`;
 
+// Cria uma cópia do array de bandas, se `timeSeriesData.attributes` for um array
 const bands = Array.isArray(timeSeriesData.attributes) ? timeSeriesData.attributes.slice() : [];
 
+// Define o modo do gráfico como 'single' se houver apenas uma banda, caso contrário, define como 'multi'
 const mode = Array.isArray(bands) && bands.length === 1 ? 'single' : 'multi';
 
+// Obtém o tipo do gráfico (coverage, source ou type), se disponível; caso contrário, usa o título ou 'unknown'
 const chartTypeRaw =
   (timeSeriesData && (timeSeriesData.coverage || timeSeriesData.source || timeSeriesData.type)) ||
   title ||
   'unknown';
+
+// Normaliza o tipo de gráfico para minúsculas e remove espaços extras
 const chartType = String(chartTypeRaw).trim().toLowerCase();
 
+// Normaliza os nomes das bandas (retira espaços extras e valores nulos ou vazios)
 const normalizedBands = bands.map(b => String(b || '').trim()).filter(Boolean);
 
+// Define a chave dos atributos do gráfico com base no modo ('single' ou 'multi') e nas bandas selecionadas
 const attrKey = mode === 'single'
-  ? (normalizedBands[0] || '').toLowerCase()
-  : normalizedBands.map(s => s.toLowerCase()).sort().join(',');
+  ? (normalizedBands[0] || '').toLowerCase()  // Se for modo 'single', usa a primeira banda
+  : normalizedBands.map(s => s.toLowerCase()).sort().join(','); // Se for 'multi', junta todas as bandas separadas por vírgula
 
+// Função para gerar uma chave de gráfico a partir dos atributos de um elemento de canvas
 function canvasKeyFromElement(el) {
+  // Obtém os atributos do tipo de gráfico, modo e atributos a partir do elemento do canvas
   const t = String(el.getAttribute('data-chart-type') || '').trim().toLowerCase();
   const m = String(el.getAttribute('data-chart-mode') || '').trim().toLowerCase();
   const attrs = String(el.getAttribute('data-chart-attributes') || '').trim().toLowerCase();
+
+  // Retorna um objeto com a chave formada pelos atributos do gráfico
   const attrKeyExisting = m === 'single'
     ? attrs
     : attrs.split(',').map(s => s.trim()).filter(Boolean).sort().join(',');
+  
   return { t, m, attr: attrKeyExisting };
 }
 
+// Verifica se já existe um gráfico com a mesma chave
 const existingCanvas = Array.from(document.querySelectorAll('canvas[data-chart-type]'));
 const duplicateFound = existingCanvas.some(c => {
+  // Para cada canvas, compara a chave do gráfico com a chave atual
   const k = canvasKeyFromElement(c);
   if (k.t !== chartType) return false; 
   if (k.m !== mode) return false;      
-  return k.attr === attrKey;
+  return k.attr === attrKey;  // Verifica se os atributos são os mesmos
 });
 
+// Se um gráfico duplicado for encontrado, exibe uma mensagem e impede a criação de um novo gráfico
 if (duplicateFound) {
-  
   showInfoPanelSTAC(
     `<div class="satelite-popup-header text-warning"><strong>Gráfico duplicado</strong></div>
      <p>Um gráfico com o mesmo tipo ("${chartTypeRaw}") e com os mesmos atributos e modo ("${mode}") já foi plotado.</p>`
   );
-  return;
+  return;  // Impede a execução do código após a detecção de duplicados
 }
 
+// Cria uma cópia das bandas normalizadas para ser usada no gráfico
 const bandsToPlot = normalizedBands.slice();
 
+// Prepara os dados de timeline e valores dos registros (caso estejam disponíveis)
 const timeline = Array.isArray(timeSeriesData.timeline) ? timeSeriesData.timeline.slice() : [];
 const valuesRecords = Array.isArray(timeSeriesData.values) ? timeSeriesData.values : [];
-  const chartDatasets = bandsToPlot.map((band, index) => {
-    const rawValues = valuesRecords.map((rec) => (rec ? rec[band] : null));
-    const scaledData = rawValues.map((val) =>
-      val !== undefined && val !== null ? applyScale(val) : null
-    );
-    const points = timeline.map((date, i) => ({
-      x: date,
-      y: i < scaledData.length ? scaledData[i] : null,
-    }));
 
-    let color = `hsl(${(index * 60) % 360}, 70%, 50%)`;
-    if (String(band).toUpperCase().includes("NDVI")) color = "rgba(0, 128, 0, 1)";
-    else if (String(band).toUpperCase().includes("EVI")) color = "rgba(0, 0, 255, 1)";
+// Cria os datasets para o gráfico, associando as bandas aos valores temporais
+const chartDatasets = bandsToPlot.map((band, index) => {
+  // Para cada banda, coleta os valores correspondentes
+  const rawValues = valuesRecords.map((rec) => (rec ? rec[band] : null));
 
-    return {
-      label: band,
-      data: points,
-      borderColor: String(band).toUpperCase().includes("NDVI")
-        ? "rgba(0, 80, 0, 1)"
-        : String(band).toUpperCase().includes("EVI")
-        ? "rgba(50, 50, 150, 1)"
-        : "#333333",
-      borderWidth: 2,
-      fill: false,
-      tension: 0.1,
-      pointRadius: 3,
-    };
-  });
+  // Aplica escala nos valores (se forem definidos)
+  const scaledData = rawValues.map((val) =>
+    val !== undefined && val !== null ? applyScale(val) : null
+  );
+
+  // Associa as datas aos valores escalados
+  const points = timeline.map((date, i) => ({
+    x: date,
+    y: i < scaledData.length ? scaledData[i] : null,
+  }));
+
+  // Define a cor para a linha do gráfico, com base na banda (NDVI ou EVI)
+  let color = `hsl(${(index * 60) % 360}, 70%, 50%)`;
+  if (String(band).toUpperCase().includes("NDVI")) color = "rgba(0, 128, 0, 1)";
+  else if (String(band).toUpperCase().includes("EVI")) color = "rgba(0, 0, 255, 1)";
+
+  // Retorna o dataset com os dados, cor e outras propriedades para o gráfico
+  return {
+    label: band,
+    data: points,
+    borderColor: String(band).toUpperCase().includes("NDVI")
+      ? "rgba(0, 80, 0, 1)"  // Cor verde para NDVI
+      : String(band).toUpperCase().includes("EVI")
+      ? "rgba(50, 50, 150, 1)"  // Cor azul para EVI
+      : "#333333",  // Cor padrão para outras bandas
+    borderWidth: 2,  // Largura da borda da linha
+    fill: false,  // Não preenche a área sob a linha
+    tension: 0.1,  // Define a suavidade da curva
+    pointRadius: 3,  // Define o tamanho dos pontos no gráfico
+  };
+});
 
   // 2) Autoescala do eixo Y depois dos datasets
   const allY = chartDatasets.flatMap((d) =>
@@ -1187,29 +1213,39 @@ const panelContent = `
 clearBtn.addEventListener("click", () => {
   const graphArea = document.getElementById("wtss-graph-area");
   if (graphArea) {
-    // destroy any Chart.js instances inside graphArea
+    // Destrói qualquer instância do Chart.js dentro de graphArea
     try {
       const canvases = graphArea.querySelectorAll("canvas");
       canvases.forEach(cv => {
         try {
-          if (cv._chart && typeof cv._chart.destroy === "function") { cv._chart.destroy(); const chartKey = cv.getAttribute("data-wtss-key"); if (chartKey) { window._wtss_chart_keys.delete(chartKey); } }
+          if (cv._chart && typeof cv._chart.destroy === "function") {
+            cv._chart.destroy();
+            const chartKey = cv.getAttribute("data-wtss-key");
+            if (chartKey) {
+              window._wtss_chart_keys.delete(chartKey);
+            }
+          }
           if (cv._chart) delete cv._chart;
         } catch (e) {}
       });
-    } catch (e) { console.warn('Error destroying charts on clear', e); }
-    // remove DOM nodes
+    } catch (e) {
+      console.warn('Erro ao destruir gráficos ao limpar', e);
+    }
+    // Remove os nós DOM
     graphArea.innerHTML = "";
   }
 
-  // destroy modal charts if any
+  // Destrói gráficos do modal, se houver
   try {
     if (window.wtss_modal_charts && Array.isArray(window.wtss_modal_charts)) {
-      window.wtss_modal_charts.forEach(c => { try { c.destroy(); } catch(e){} });
+      window.wtss_modal_charts.forEach(c => { 
+        try { c.destroy(); } catch (e) {}
+      });
       window.wtss_modal_charts = [];
     }
-  } catch(e){}
+  } catch (e) {}
 
-  // Remove stored WTSS data references
+  // Remove referências de dados WTSS armazenadas
   try {
     for (const k of Object.keys(window)) {
       if (k && (k.startsWith('wtss_data_') || k.startsWith('wtss_multi_'))) {
@@ -1218,25 +1254,32 @@ clearBtn.addEventListener("click", () => {
         } catch (e) {}
       }
     }
-  } catch(e){}
+  } catch (e) {}
 
-  // uncheck any checkboxes in UI state just in case
+  // Desmarca quaisquer checkboxes no estado da interface, por precaução
   try {
     const boxes = document.querySelectorAll('.wtss-select-checkbox');
-    boxes.forEach(b => { try { b.checked = false; b.closest('.wtss-chart-block')?.classList.remove('selected'); } catch(e){} });
-  } catch(e){}
+    boxes.forEach(b => { 
+      try { 
+        b.checked = false; 
+        b.closest('.wtss-chart-block')?.classList.remove('selected'); 
+      } catch (e) {}
+    });
+  } catch (e) {}
 
-  // remove any leftover modal overlay
-  try { document.getElementById('wtss-modal-overlay')?.remove(); } catch(e){}
+  // Remove qualquer sobreposição de modal restante
+  try { 
+    document.getElementById('wtss-modal-overlay')?.remove(); 
+  } catch (e) {}
 
-  // --- CORREÇÃO IMPORTANTE: limpar o registry correto ---
+  //  limpar o registro 
   try {
     if (window._wtss_chart_keys && typeof window._wtss_chart_keys.clear === 'function') {
       window._wtss_chart_keys.clear();
-      console.debug('[WTSS] registry cleared by Clear All.');
+      console.debug('[WTSS] registro limpo ao clicar em Limpar Tudo.');
     }
   } catch (e) {
-    console.warn('[WTSS] failed to clear _wtss_chart_keys', e);
+    console.warn('[WTSS] falha ao limpar _wtss_chart_keys', e);
   }
 });
 
@@ -1244,7 +1287,7 @@ clearBtn.addEventListener("click", () => {
     if (typeof showSelectedWTSSInModal === "function")
       showSelectedWTSSInModal();
   });
-  // NOVO: Listener para o botão de Selecionar 6 Primeiros
+  // Listener para o botão de Selecionar 6 Primeiros
   if (selectFirstSixBtn) {
     selectFirstSixBtn.addEventListener("click", window.selectFirstSixCharts);
   }

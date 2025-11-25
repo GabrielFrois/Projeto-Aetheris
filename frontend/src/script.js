@@ -2514,7 +2514,7 @@ function updateHistoryList() {
           minute: "2-digit",
         })}
       </div>
-      <span class="history-remove" style="cursor: pointer; color: red; font-size: 18px; font-weight: bold;">&times;</span>
+      <span class="history-remove" style="cursor: pointer; color: red; font-size: 18px; font-weight: bold; margin-left: -5px;">&times;</span>
     `;
 
     // Adiciona o evento de clique para o botão de remoção

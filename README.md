@@ -15,9 +15,9 @@ A CapyDev é uma equipe de desenvolvedores criada em 2024 por um grupo de estuda
 
 | Sprints | Início | Fim | Relatório |
 | ------- | ------ | --- | --------- |
-| 1ª sprint | 16/09/2025 | 07/10/2025 |
-| 2ª sprint | 13/10/2025 | 04/11/2025 |
-| 3ª sprint | 06/11/2025 | 25/11/2025 |
+| 1ª sprint | 16/09/2025 | 07/10/2025 | <a href="https://www.youtube.com/watch?v=Hay6_8phEHQ">Ver</a>
+| 2ª sprint | 13/10/2025 | 04/11/2025 | <a href="https://www.youtube.com/watch?v=_-6j8MYV-h4">Ver</a>
+| 3ª sprint | 06/11/2025 | 25/11/2025 | <a href="https://youtu.be/cmaXGG6736U">Ver</a>
 
 <h2>Product Backlog</h2>
 

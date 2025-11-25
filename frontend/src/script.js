@@ -921,7 +921,10 @@ const panelContent = `
   </div>
 
   <button id="wtss-show-selected" class="action-button primary-button">🖥️ Mostrar Selecionados</button><br>
-<button id="wtss-select-first-six" class="action-button" style="background-color: #ffc107; border-color: #ffc107; color: #333;">✅ Selecionar 6 Primeiros</button>  <div id="wtss-graph-area"></div>
+<button id="wtss-select-first-six" class="action-button-select-first-six">
+    ✅ Seleção Rápida (6)
+</button>
+<div id="wtss-graph-area"></div>
 `;
 
   const wtssTab = document.getElementById("wtss-tab");
@@ -1207,15 +1210,13 @@ window.selectFirstSixCharts = function() {
         cb.closest('.wtss-chart-block')?.classList.add('selected');
     });
 
-    if (checkboxes.length > 6) {
-        alert(`Foram plotados ${checkboxes.length} gráficos. Apenas os 6 primeiros foram selecionados para comparação.`);
+   if (checkboxes.length > 6) {
+        alert(`Atenção: Apenas os 6 primeiros gráficos foram selecionados para o modo Comparação Rápida. Você pode desmarcar/marcar manualmente.`);
     } else if (checkboxes.length > 0) {
-        // Notificação mais suave para mostrar que a seleção ocorreu
-        // Pode ser aprimorada, mas alert simples serve por enquanto
-        const total = checkboxes.length;
-        alert(`${total} gráfico(s) selecionado(s) e pronto(s) para visualização. Clique em "🖥️ Mostrar Selecionados".`);
+        const total = chartsToSelect.length;
+        alert(`${total} gráfico(s) selecionado(s) e pronto(s) para visualização. Clique no botão "🖥️ Mostrar Selecionados" abaixo.`);
     } else {
-        alert("Nenhum gráfico plotado ainda para ser selecionado.");
+        alert("Nenhum gráfico plotado ainda. Clique em '▶️ Plotar' primeiro.");
     }
 };
 
@@ -2264,5 +2265,6 @@ function makeDraggable(widget, handle) {
     widget.style.transform = `translate(${widgetX + dx}px, ${widgetY + dy}px)`;
   });
 }
+
 
 

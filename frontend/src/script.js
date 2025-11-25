@@ -1,3 +1,111 @@
+
+// --- WTSS: registro global para evitar duplicados (single/multi, não sensível à ordem para multi) ---
+window._wtss_chart_keys = window._wtss_chart_keys || new Set();
+// Função para criar a chave única para identificar os gráficos
+function _wtss_make_key(coverage, mode, attrs){
+  const cov = String(coverage || 'unknown').toLowerCase().trim();
+  const m = String(mode || 'single').toLowerCase().trim();
+  if(!attrs) attrs = '';
+  if(Array.isArray(attrs)){
+    const arr = attrs.map(a=>String(a||'').toLowerCase().trim()).filter(Boolean).sort();
+    return cov + '|' + m + '|' + arr.join(',');
+  } else {
+    const s = String(attrs||'').toLowerCase().trim();
+    if(m === 'multi'){
+      const arr = s.split(',').map(a=>a.trim()).filter(Boolean).map(a=>a.toLowerCase()).sort();
+      return cov + '|' + m + '|' + arr.join(',');
+    }
+    return cov + '|' + m + '|' + s;
+  }
+}
+// Função que verifica se o gráfico é duplicado
+function _wtss_is_duplicate(coverage, mode, attrs){
+  try{
+    const key = _wtss_make_key(coverage, mode, attrs);
+    if(window._wtss_chart_keys && window._wtss_chart_keys.has(key)){
+      console.debug('[WTSS] duplicate detected via registry ->', key);
+      return true;
+    }
+   
+    try{
+      const blocks = Array.from(document.querySelectorAll('.wtss-chart-block'));
+      for(const b of blocks){
+        const k = b.getAttribute && b.getAttribute('data-wtss-key');
+        if(k && k.toString().trim().toLowerCase() === key.toString().trim().toLowerCase()){
+          console.debug('[WTSS] duplicate detected via DOM ->', key);
+          
+          if(window._wtss_chart_keys) window._wtss_chart_keys.add(key);
+          return true;
+        }
+      }
+    }catch(e){ console.debug('[WTSS] DOM scan failed', e); }
+    return false;
+  }catch(e){
+    console.warn('[WTSS] _wtss_is_duplicate error', e);
+    return false;
+  }
+}
+// Função para registrar uma chave única de gráfico no registro
+function _wtss_register_key(coverage, mode, attrs){
+  const key = _wtss_make_key(coverage, mode, attrs);
+  window._wtss_chart_keys.add(key);
+  return key;
+}
+function _wtss_unregister_key(coverage, mode, attrs){
+  const key = _wtss_make_key(coverage, mode, attrs);
+  window._wtss_chart_keys.delete(key);
+  return key;
+}
+
+// Função para exibir uma notificação (toast) no canto da tela
+function showWTSSToast(htmlMessage, duration = 3500) {
+  try {
+    let container = document.getElementById("wtss-toast-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "wtss-toast-container";
+      container.style.position = "fixed";
+      container.style.top = "20px";
+      container.style.right = "20px";
+      container.style.zIndex = "99999";
+      container.style.display = "flex";
+      container.style.flexDirection = "column";
+      container.style.gap = "8px";
+      document.body.appendChild(container);
+    }
+
+    const toast = document.createElement("div");
+    toast.className = "wtss-toast";
+    toast.style.minWidth = "260px";
+    toast.style.maxWidth = "420px";
+    toast.style.background = "rgba(0,0,0,0.85)";
+    toast.style.color = "#fff";
+    toast.style.padding = "10px 12px";
+    toast.style.borderRadius = "8px";
+    toast.style.boxShadow = "0 6px 18px rgba(0,0,0,0.35)";
+    toast.style.fontSize = "0.95rem";
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 220ms ease, transform 220ms ease";
+    toast.style.transform = "translateY(-6px)";
+    toast.innerHTML = htmlMessage;
+
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
+      toast.style.transform = "translateY(0)";
+    });
+
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      toast.style.transform = "translateY(-6px)";
+      setTimeout(() => { try { toast.remove(); } catch (e) {} }, 250);
+    }, duration);
+  } catch (e) {
+    console.warn("showWTSSToast failed", e);
+  }
+}
+
 // Aetheris
 const BR_BOUNDS = [
   [-34.0, -74.0],
@@ -527,29 +635,90 @@ function createChart(lat, lng, title, timeSeriesData) {
   }
 
   const chartId = `chart-${Date.now()}`;
-  const bands = timeSeriesData.attributes;
 
-  // 1) Monta os datasets primeiro
-  const chartDatasets = bands.map((band, index) => {
-    const rawValues = timeSeriesData.values.map((v) => v[band]);
+const bands = Array.isArray(timeSeriesData.attributes) ? timeSeriesData.attributes.slice() : [];
+
+// --- Prevent duplicate charts of the SAME TYPE and MODE ---
+// Modes:
+//   'single' => user requested a single attribute (e.g., NDVI)
+//   'multi'  => user requested multiple attributes (e.g., NDVI + EVI)
+const mode = Array.isArray(bands) && bands.length === 1 ? 'single' : 'multi';
+
+// Determine a chartType to scope uniqueness. Prefer an explicit source/coverage when available,
+// otherwise fall back to the title. Normalize to lowercase.
+const chartTypeRaw =
+  (timeSeriesData && (timeSeriesData.coverage || timeSeriesData.source || timeSeriesData.type)) ||
+  title ||
+  'unknown';
+const chartType = String(chartTypeRaw).trim().toLowerCase();
+
+// Normalized attributes
+const normalizedBands = bands.map(b => String(b || '').trim()).filter(Boolean);
+// Attribute key for comparison:
+//  - single: the attribute name (lowercased)
+//  - multi : sorted, lowercased, comma-joined attribute set (order-insensitive)
+const attrKey = mode === 'single'
+  ? (normalizedBands[0] || '').toLowerCase()
+  : normalizedBands.map(s => s.toLowerCase()).sort().join(',');
+
+// Helper to compute existing canvas' key
+function canvasKeyFromElement(el) {
+  const t = String(el.getAttribute('data-chart-type') || '').trim().toLowerCase();
+  const m = String(el.getAttribute('data-chart-mode') || '').trim().toLowerCase();
+  const attrs = String(el.getAttribute('data-chart-attributes') || '').trim().toLowerCase();
+  const attrKeyExisting = m === 'single'
+    ? attrs
+    : attrs.split(',').map(s => s.trim()).filter(Boolean).sort().join(',');
+  return { t, m, attr: attrKeyExisting };
+}
+
+// Search existing charts (canvas elements) for a match
+const existingCanvas = Array.from(document.querySelectorAll('canvas[data-chart-type]'));
+const duplicateFound = existingCanvas.some(c => {
+  const k = canvasKeyFromElement(c);
+  if (k.t !== chartType) return false; // different chart type -> ok
+  if (k.m !== mode) return false;      // different mode -> ok (single vs multi are independent)
+  return k.attr === attrKey;
+});
+
+if (duplicateFound) {
+  // Duplicate of same chart type + mode + attribute(s) — block it
+  showInfoPanelSTAC(
+    `<div class="satelite-popup-header text-warning"><strong>Gráfico duplicado</strong></div>
+     <p>Um gráfico com o mesmo tipo ("${chartTypeRaw}") e com os mesmos atributos e modo ("${mode}") já foi plotado.</p>`
+  );
+  return;
+}
+
+// keep bands as-is for plotting (filter out any falsy)
+const bandsToPlot = normalizedBands.slice();
+
+// timeline and raw values matrix from the server response
+const timeline = Array.isArray(timeSeriesData.timeline) ? timeSeriesData.timeline.slice() : [];
+const valuesRecords = Array.isArray(timeSeriesData.values) ? timeSeriesData.values : [];// 1) Monta os datasets primeiro
+  const chartDatasets = bandsToPlot.map((band, index) => {
+    // For each band, extract the series of raw values from the response records
+    const rawValues = valuesRecords.map((rec) => (rec ? rec[band] : null));
     const scaledData = rawValues.map((val) =>
       val !== undefined && val !== null ? applyScale(val) : null
     );
-    let color = `hsl(${index * 60}, 70%, 50%)`;
-    if (band.toUpperCase().includes("NDVI")) color = "rgba(0, 128, 0, 1)";
-    else if (band.toUpperCase().includes("EVI")) color = "rgba(0, 0, 255, 1)";
+
+    // Build data points aligned with the timeline (if timeline shorter, limit to that length)
+    const points = timeline.map((date, i) => ({
+      x: date,
+      y: i < scaledData.length ? scaledData[i] : null,
+    }));
+
+    let color = `hsl(${(index * 60) % 360}, 70%, 50%)`;
+    if (String(band).toUpperCase().includes("NDVI")) color = "rgba(0, 128, 0, 1)";
+    else if (String(band).toUpperCase().includes("EVI")) color = "rgba(0, 0, 255, 1)";
+
     return {
-      label: attribute,
-      data: timeline.map((date, i) => ({
-        x: date,
-        y:
-          values[i] !== undefined && values[i] !== null
-            ? applyScale(values[i])
-            : null,
-      })),
-      borderColor: band.toUpperCase().includes("NDVI")
+      label: band,
+      data: points,
+      borderColor: String(band).toUpperCase().includes("NDVI")
         ? "rgba(0, 80, 0, 1)"
-        : band.toUpperCase().includes("EVI")
+        : String(band).toUpperCase().includes("EVI")
         ? "rgba(50, 50, 150, 1)"
         : "#333333",
       borderWidth: 2,
@@ -576,9 +745,9 @@ function createChart(lat, lng, title, timeSeriesData) {
   const panelHtml = `
         <div class="chart-popup-content">
             <div class="satelite-popup-header"><strong>Série Temporal STAC: ${title}</strong></div>
-            <p>Atributos: ${bands.join(", ")}</p>
+            <p>Atributos: ${bandsToPlot.join(", ")}</p>
             <hr class="satelite-popup-divider">
-            <div class="stac-canvas-wrapper"><canvas id="${chartId}"></canvas></div>
+            <div class="stac-canvas-wrapper"><canvas id="${chartId}" data-chart-attributes="${bandsToPlot.join(',')}" data-chart-mode="${mode}" data-chart-type="${chartType}"></canvas></div>
             <p class="chart-footer stac-chart-footer">Valores reais (escala padrão aplicada).</p>
         </div>`;
 
@@ -1031,10 +1200,62 @@ const panelContent = `
     fetchWTSSTimeSeriesAndPlot(lat, lng, coverage, attributeCsv);
   });
 
-  clearBtn.addEventListener("click", () => {
-    const graphArea = document.getElementById("wtss-graph-area");
-    if (graphArea) graphArea.innerHTML = "";
-  });
+  
+clearBtn.addEventListener("click", () => {
+  const graphArea = document.getElementById("wtss-graph-area");
+  if (graphArea) {
+    // destroy any Chart.js instances inside graphArea
+    try {
+      const canvases = graphArea.querySelectorAll("canvas");
+      canvases.forEach(cv => {
+        try {
+          if (cv._chart && typeof cv._chart.destroy === "function") { cv._chart.destroy(); const chartKey = cv.getAttribute("data-wtss-key"); if (chartKey) { window._wtss_chart_keys.delete(chartKey); } }
+          if (cv._chart) delete cv._chart;
+        } catch (e) {}
+      });
+    } catch (e) { console.warn('Error destroying charts on clear', e); }
+    // remove DOM nodes
+    graphArea.innerHTML = "";
+  }
+
+  // destroy modal charts if any
+  try {
+    if (window.wtss_modal_charts && Array.isArray(window.wtss_modal_charts)) {
+      window.wtss_modal_charts.forEach(c => { try { c.destroy(); } catch(e){} });
+      window.wtss_modal_charts = [];
+    }
+  } catch(e){}
+
+  // Remove stored WTSS data references
+  try {
+    for (const k of Object.keys(window)) {
+      if (k && (k.startsWith('wtss_data_') || k.startsWith('wtss_multi_'))) {
+        try {
+          delete window[k];
+        } catch (e) {}
+      }
+    }
+  } catch(e){}
+
+  // uncheck any checkboxes in UI state just in case
+  try {
+    const boxes = document.querySelectorAll('.wtss-select-checkbox');
+    boxes.forEach(b => { try { b.checked = false; b.closest('.wtss-chart-block')?.classList.remove('selected'); } catch(e){} });
+  } catch(e){}
+
+  // remove any leftover modal overlay
+  try { document.getElementById('wtss-modal-overlay')?.remove(); } catch(e){}
+
+  // --- CORREÇÃO IMPORTANTE: limpar o registry correto ---
+  try {
+    if (window._wtss_chart_keys && typeof window._wtss_chart_keys.clear === 'function') {
+      window._wtss_chart_keys.clear();
+      console.debug('[WTSS] registry cleared by Clear All.');
+    }
+  } catch (e) {
+    console.warn('[WTSS] failed to clear _wtss_chart_keys', e);
+  }
+});
 
   showSelectedBtn.addEventListener("click", () => {
     if (typeof showSelectedWTSSInModal === "function")
@@ -1817,6 +2038,34 @@ function createWTSSTimeSeriesChart(
   attribute,
   coverage
 ) {
+  // Duplicate prevention (single attribute)
+  try{
+    if(_wtss_is_duplicate(coverage, 'single', attribute)){
+      showWTSSToast(`<b>Gráfico duplicado</b><br>Já existe um gráfico WTSS para <b>${coverage}</b> com o atributo <b>${attribute}</b>.`);
+      return;
+    }
+  }catch(e){ console.warn('dup check failed', e); }
+
+// === WTSS uniqueness check (single attribute) ===
+try {
+  const _cov_l = String(coverage || '').toLowerCase();
+  const _attr_l = String(attribute || '').toLowerCase();
+  const _key = `${_cov_l}|single|${_attr_l}`;
+  for (const k in window) {
+    if (!Object.prototype.hasOwnProperty.call(window, k)) continue;
+    if (!k.startsWith('wtss_data_')) continue;
+    const obj = window[k];
+    if (!obj || obj.multi) continue;
+    const exCov = String(obj.coverage || '').toLowerCase();
+    const exAttr = String(obj.attribute || '').toLowerCase();
+    const exKey = `${exCov}|single|${exAttr}`;
+    if (exKey === _key) {
+      showWTSSToast(`<b>Gráfico duplicado</b><br>Já existe um gráfico WTSS com esse atributo.`);
+      return;
+    }
+  }
+} catch (e) { console.warn('WTSS duplicate check (single) failed', e); }
+
   const uniqueId = sanitizeId(`chart-${coverage}-${attribute}-${Date.now()}`);
   const graphArea = document.getElementById("wtss-graph-area");
   if (!graphArea) return;
@@ -1841,22 +2090,66 @@ function createWTSSTimeSeriesChart(
     `;
 
   graphArea.appendChild(chartBlock);
+  try{
+    const _key = _wtss_register_key(coverage, 'single', attribute);
+    chartBlock.setAttribute('data-wtss-key', _key);
+  }catch(e){ console.warn('register key failed', e); }
 
-  const closeBtn = chartBlock.querySelector(".wtss-close-btn");
+
+  
+const closeBtn = chartBlock.querySelector(".wtss-close-btn");
+// Modify this to ensure multi-graphs are also removed from the registry.
+if (closeBtn) {
+  closeBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const dataObj = window[`wtss_data_${uniqueId}`];
+    try { 
+      if(dataObj){ 
+        _wtss_unregister_key(dataObj.coverage, 'multi', dataObj.attributes); 
+      } 
+    } catch (e) {}
+    const canvas = chartBlock.querySelector(`#canvas-${uniqueId}`);
+    if (canvas && canvas._chart) { 
+      try { 
+        canvas._chart.destroy(); 
+      } catch (e) {} 
+    }
+    try { delete window[`wtss_data_${uniqueId}`]; } catch (e) {}
+    chartBlock.remove();
+  });
+}
+    
   if (closeBtn) {
-    closeBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const canvas = chartBlock.querySelector(`#canvas-${uniqueId}`);
-      if (canvas && canvas._chart) {
-        try {
-          canvas._chart.destroy();
-        } catch (e) {}
-      }
+    closeBtn.addEventListener("click", (ev) => { const chartBlock = closeBtn.closest(".wtss-chart-block"); const chartKey = chartBlock ? chartBlock.getAttribute("data-wtss-key") : null; if (chartKey) { window._wtss_chart_keys.delete(chartKey); } 
+  ev.stopPropagation();
+
+  // Unregister multi key
+  try {
+    const dataObj = window[`wtss_data_${uniqueId}`] || window[`wtss_multi_${uniqueId}`];
+    if (dataObj && Array.isArray(dataObj.attributes)) {
+      _wtss_unregister_key(dataObj.coverage, 'multi', dataObj.attributes);
+    } else {
+      // fallback: use attributes argument (if in scope)
       try {
-        delete window[`wtss_data_${uniqueId}`];
-      } catch (e) {}
-      chartBlock.remove();
-    });
+        const normAttrs = Array.isArray(attributes) ? attributes : (String(attributes||'').split(',').map(a=>a.trim()).filter(Boolean));
+        _wtss_unregister_key(coverage, 'multi', normAttrs);
+      } catch(e){}
+    }
+  } catch(e){ console.warn('[WTSS] unregister multi failed', e); }
+
+  const canvas = chartBlock.querySelector(`#canvas-${uniqueId}`);
+  if (canvas && canvas._chart) {
+    try { canvas._chart.destroy(); } catch(e) {}
+    try { delete canvas._chart; } catch(e) {}
+  }
+
+  try {
+    delete window["wtss_multi_" + uniqueId];
+    delete window["wtss_data_" + uniqueId];
+  } catch (e) {}
+
+  chartBlock.remove();
+});
   }
 
   document.getElementById("wtss-tab").scrollTop = 0;
@@ -1961,6 +2254,34 @@ function createWTSSTimeSeriesChartMulti(
   attributes,
   coverage
 ) {
+  // Duplicate prevention (multi attribute set)
+  try{
+    if(_wtss_is_duplicate(coverage, 'multi', attributes)){
+      showWTSSToast(`<b>Gráfico duplicado</b><br>Já existe um gráfico WTSS para <b>${coverage}</b> com os mesmos atributos ${Array.isArray(attributes)?attributes.join(', '):attributes}.`);
+      return;
+    }
+  }catch(e){ console.warn('dup multi check failed', e); }
+
+// === WTSS uniqueness check (multi-attribute) ===
+try {
+  const _cov_l = String(coverage || '').toLowerCase();
+  const _attrs_l = Array.isArray(attributes) ? attributes.map(a=>String(a).toLowerCase()).slice().sort().join(',') : String(attributes || '').toLowerCase();
+  const _key = `${_cov_l}|multi|${_attrs_l}`;
+  for (const k in window) {
+    if (!Object.prototype.hasOwnProperty.call(window, k)) continue;
+    if (!k.startsWith('wtss_data_')) continue;
+    const obj = window[k];
+    if (!obj || !obj.multi) continue;
+    const exCov = String(obj.coverage || '').toLowerCase();
+    const exAttrs = Array.isArray(obj.attributes) ? obj.attributes.map(a=>String(a).toLowerCase()).slice().sort().join(',') : String(obj.attributes || '').toLowerCase();
+    const exKey = `${exCov}|multi|${exAttrs}`;
+    if (exKey === _key) {
+      showInfoPanelWTSS(`<div class="text-warning"><strong>Gráfico duplicado</strong></div><p>Já existe um gráfico WTSS para <b>${coverage}</b> com os mesmos atributos <b>${attributes.join ? attributes.join(', ') : attributes}</b>.</p>`);
+      return;
+    }
+  }
+} catch (e) { console.warn('WTSS duplicate check (multi) failed', e); }
+
   const uniqueId = sanitizeId(`chart-multi-${coverage}-${Date.now()}`);
   const graphArea = document.getElementById("wtss-graph-area");
   if (!graphArea) return;
@@ -1988,6 +2309,11 @@ function createWTSSTimeSeriesChartMulti(
   `;
 
   graphArea.appendChild(chartBlock);
+  try{
+    const _key = _wtss_register_key(coverage, 'multi', attributes);
+    chartBlock.setAttribute('data-wtss-key', _key);
+  }catch(e){ console.warn('register multi key failed', e); }
+
   document.getElementById("wtss-tab").scrollTop = 0;
 
   window["wtss_multi_" + uniqueId] = {
@@ -2008,22 +2334,47 @@ function createWTSSTimeSeriesChartMulti(
   if (det) det.open = true;
   plotMultiChartInAcordeon(uniqueId);
 
-  const closeBtn = chartBlock.querySelector(".wtss-close-btn");
+  
+const closeBtn = chartBlock.querySelector(".wtss-close-btn");
+// Modify this to ensure multi-graphs are also removed from the registry.
+if (closeBtn) {
+  closeBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const dataObj = window[`wtss_data_${uniqueId}`];
+    try { 
+      if(dataObj){ 
+        _wtss_unregister_key(dataObj.coverage, 'multi', dataObj.attributes); 
+      } 
+    } catch (e) {}
+    const canvas = chartBlock.querySelector(`#canvas-${uniqueId}`);
+    if (canvas && canvas._chart) { 
+      try { 
+        canvas._chart.destroy(); 
+      } catch (e) {} 
+    }
+    try { delete window[`wtss_data_${uniqueId}`]; } catch (e) {}
+    chartBlock.remove();
+  });
+}
+    
   if (closeBtn) {
-    closeBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const canvas = chartBlock.querySelector(`#canvas-${uniqueId}`);
-      if (canvas && canvas._chart) {
-        try {
-          canvas._chart.destroy();
-        } catch (e) {}
-      }
-      try {
-        delete window["wtss_multi_" + uniqueId];
-        delete window["wtss_data_" + uniqueId];
-      } catch (e) {}
-      chartBlock.remove();
-    });
+    closeBtn.addEventListener("click", (ev) => { const chartBlock = closeBtn.closest(".wtss-chart-block"); const chartKey = chartBlock ? chartBlock.getAttribute("data-wtss-key") : null; if (chartKey) { window._wtss_chart_keys.delete(chartKey); } 
+    ev.stopPropagation();
+
+    const norm = attributes.map(a => a.toLowerCase()).sort().join(",");
+    const key = `${coverage.toLowerCase()}|multi|${norm}`;
+    window.WTSS_KEY_REGISTRY.delete(key);
+
+    try {
+        delete window[`wtss_multi_${uniqueId}`];
+        delete window[`wtss_data_${uniqueId}`];
+    } catch (e) {}
+
+    const cv = chartBlock.querySelector("canvas");
+    if (cv && cv._chart) cv._chart.destroy();
+
+    chartBlock.remove();
+});
   }
 
   const checkbox = chartBlock.querySelector(".wtss-select-checkbox");
